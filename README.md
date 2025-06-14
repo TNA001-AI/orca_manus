@@ -1,4 +1,4 @@
-## ORCA_MANUS
+# ORCA_MANUS
 This project uses a Manus glove to teleoperate the ORCA HAND, and is implemented using ROS 2 and PyBullet.
 
 ## Acknowledgements
