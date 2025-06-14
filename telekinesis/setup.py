@@ -1,6 +1,23 @@
 from setuptools import find_packages, setup
+import os
+from glob import glob
 
 package_name = 'telekinesis'
+
+def get_mesh_files():
+    mesh_files = []
+    # Add URDF files
+    mesh_files.append((os.path.join('share', package_name, 'telekinesis', 'orca_hand'), 
+                      glob('telekinesis/orca_hand/*.urdf')))
+    
+    # Add mesh files for both left and right hands
+    for hand in ['left', 'right']:
+        for mesh_type in ['visual', 'collision']:
+            mesh_path = os.path.join('telekinesis', 'orca_hand', 'mesh', hand, mesh_type)
+            if os.path.exists(mesh_path):
+                mesh_files.append((os.path.join('share', package_name, 'telekinesis', 'orca_hand', 'mesh', hand, mesh_type),
+                                 glob(os.path.join(mesh_path, '*'))))
+    return mesh_files
 
 setup(
     name=package_name,
@@ -10,7 +27,7 @@ setup(
         ('share/ament_index/resource_index/packages',
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
-    ],
+    ] + get_mesh_files(),
     install_requires=['setuptools'],
     zip_safe=True,
     maintainer='keshaw',

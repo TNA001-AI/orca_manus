@@ -25,16 +25,24 @@ class OrcaPybulletIK(Node):
         # start pybullet
         p.connect(p.GUI)
         # load right orca hand      
-        path_src = os.path.abspath(__file__)
-        path_src = os.path.dirname(path_src)
+        package_share_dir = get_package_share_directory('telekinesis')
+        # print(package_share_dir)
+        path_src = os.path.join(package_share_dir, 'telekinesis')
         self.is_left = self.declare_parameter('isLeft', False).get_parameter_value().bool_value
-        self.glove_to_orca_mapping_scale = 1.6
-        self.orcaEndEffectorIndex = [3, 4, 8, 9, 13, 14, 18, 19, 23, 24]
+        self.glove_to_orca_mapping_scale = 1.5
+        self.urdfEndEffectorIndex = [
+            8,  12,   # thumb  PIP & fingertip
+            17, 19,   # index  PIP & fingertip
+            24, 26,   # middle PIP & fingertip
+            31, 33,   # ring   PIP & fingertip
+            38, 40    # pinky  PIP & fingertip
+        ]
         if self.is_left:
-            path_src = os.path.join(path_src, URDF_PATH)
+            urdf_path = os.path.join(path_src, URDF_PATH)
+            print(f"Loading URDF from: {urdf_path}")
             # You may have to set this path for your setup on ROS2
             self.OrcaId = p.loadURDF(
-                path_src,
+                urdf_path,
                 [0, 0, 0],
                 p.getQuaternionFromEuler([0, 0, 0]),
                 useFixedBase = True
@@ -43,10 +51,10 @@ class OrcaPybulletIK(Node):
             self.pub_hand = self.create_publisher(JointState, PUBLISH_TOPIC_NAME, 10)
             self.sub_skeleton = self.create_subscription(PoseArray, "/glove/l_short", self.get_glove_data, 10)
         else:
-            path_src = os.path.join(path_src, URDF_PATH)
-
+            urdf_path = os.path.join(path_src, URDF_PATH)
+            print(f"Loading URDF from: {urdf_path}")
             self.OrcaId = p.loadURDF(
-                path_src,
+                urdf_path,
                 [0, 0, 0],
                 p.getQuaternionFromEuler([0, 0, 0]),
                 useFixedBase = True
@@ -56,6 +64,17 @@ class OrcaPybulletIK(Node):
             self.sub_skeleton = self.create_subscription(PoseArray, "/glove/r_short", self.get_glove_data, 10)
 
         self.numJoints = p.getNumJoints(self.OrcaId)
+
+        print("\nAll links in URDF:")
+        print("Base link index: -1")
+        for i in range(self.numJoints):
+            joint_info = p.getJointInfo(self.OrcaId, i)
+            print(f"Link {i}: {joint_info[12].decode('utf-8')}")  # joint_info[12] is the link name
+        print("\nAll joints in URDF:")
+        for i in range(self.numJoints):
+            joint_info = p.getJointInfo(self.OrcaId, i)
+            print(f"Joint {i}: {joint_info[1].decode('utf-8')}")  # joint_info[1] is the joint name
+        
         p.setGravity(0, 0, 0)
         useRealTimeSimulation = 0
         p.setRealTimeSimulation(useRealTimeSimulation)
@@ -63,191 +82,189 @@ class OrcaPybulletIK(Node):
             
     def create_target_vis(self):
         # load balls
-        small_ball_radius = 0.01
+        small_ball_radius = 0.005
         small_ball_shape = p.createCollisionShape(p.GEOM_SPHERE, radius=small_ball_radius)
-        ball_radius = 0.01
+        ball_radius = 0.005
         ball_shape = p.createCollisionShape(p.GEOM_SPHERE, radius=ball_radius)
         baseMass = 0.001
         basePosition = [0.25, 0.25, 0]
         
         self.ballMbt = []
-        for i in range(5):
+        for i in range(10):  # Create 10 balls for all positions
             self.ballMbt.append(p.createMultiBody(
                 baseMass=baseMass, 
                 baseCollisionShapeIndex=ball_shape, 
                 basePosition=basePosition
-            )) # for base and finger tip joints    
+            )) # for all finger positions    
             no_collision_group = 0
             no_collision_mask = 0
             p.setCollisionFilterGroupMask(self.ballMbt[i], -1, no_collision_group, no_collision_mask)
-        p.changeVisualShape(self.ballMbt[0], -1, rgbaColor=[1, 0, 0, 1]) 
-        p.changeVisualShape(self.ballMbt[1], -1, rgbaColor=[0, 1, 0, 1]) 
-        p.changeVisualShape(self.ballMbt[2], -1, rgbaColor=[0, 0, 1, 1])  
-        p.changeVisualShape(self.ballMbt[3], -1, rgbaColor=[1, 1, 0, 1])
-        p.changeVisualShape(self.ballMbt[4], -1, rgbaColor=[1, 1, 1, 1])
         
+        # Set ball colors
+        # Thumb
+        p.changeVisualShape(self.ballMbt[0], -1, rgbaColor=[1, 0, 0, 0.7])  # Red - Thumb middle
+        p.changeVisualShape(self.ballMbt[1], -1, rgbaColor=[1, 0, 0, 1])    # Red - Thumb tip
+        
+        # Index
+        p.changeVisualShape(self.ballMbt[2], -1, rgbaColor=[0, 1, 0, 0.7])  # Green - Index middle
+        p.changeVisualShape(self.ballMbt[3], -1, rgbaColor=[0, 1, 0, 1])    # Green - Index tip
+        
+        # Middle
+        p.changeVisualShape(self.ballMbt[4], -1, rgbaColor=[0, 0, 1, 0.7])  # Blue - Middle middle
+        p.changeVisualShape(self.ballMbt[5], -1, rgbaColor=[0, 0, 1, 1])    # Blue - Middle tip
+        
+        # Ring
+        p.changeVisualShape(self.ballMbt[6], -1, rgbaColor=[1, 1, 0, 0.7])  # Yellow - Ring middle
+        p.changeVisualShape(self.ballMbt[7], -1, rgbaColor=[1, 1, 0, 1])    # Yellow - Ring tip
+        
+        # Pinky
+        p.changeVisualShape(self.ballMbt[8], -1, rgbaColor=[1, 1, 1, 0.7])  # White - Pinky middle
+        p.changeVisualShape(self.ballMbt[9], -1, rgbaColor=[1, 1, 1, 1])    # White - Pinky tip
+
     def update_target_vis(self, hand_pos):
         """
         Update the visualization balls' positions
         
         Args:
-            hand_pos: List of positions for each finger tip
+            hand_pos: List of positions for each finger
+            - hand_pos[0]: Thumb middle position
             - hand_pos[1]: Thumb tip position
-            - hand_pos[2]: Index finger tip position
-            - hand_pos[3]: Middle finger tip position
-            - hand_pos[7]: Ring finger tip position
-            - hand_pos[8]: Pinky finger tip position
+            - hand_pos[2]: Index middle position
+            - hand_pos[3]: Index tip position
+            - hand_pos[4]: Middle middle position
+            - hand_pos[5]: Middle tip position
+            - hand_pos[6]: Ring middle position
+            - hand_pos[7]: Ring tip position
+            - hand_pos[8]: Pinky middle position
+            - hand_pos[9]: Pinky tip position
         """
-        # 定义球体索引和对应的手指位置索引
-        ball_to_finger_map = {
-            0: 1,  # Thumb
-            1: 2,  # Index finger
-            2: 3,  # Middle finger
-            3: 7,  # Ring finger
-            4: 8   # Pinky finger
-        }
-        
-        # 更新每个球体的位置
-        for ball_idx, pos_idx in ball_to_finger_map.items():
-            # 获取当前球体的位置和方向
-            _, current_orientation = p.getBasePositionAndOrientation(self.ballMbt[ball_idx])
-            # 更新球体位置，保持原有方向
+        # Update each ball's position
+        for i in range(10):
+            # Get current ball position and orientation
+            _, current_orientation = p.getBasePositionAndOrientation(self.ballMbt[i])
+            # Update ball position while maintaining orientation
             p.resetBasePositionAndOrientation(
-                self.ballMbt[ball_idx], 
-                hand_pos[pos_idx], 
+                self.ballMbt[i], 
+                hand_pos[i], 
                 current_orientation
             )
         
     def get_glove_data(self, pose):
         # gets the data converts it and then computes IK and visualizes
         poses = pose.poses
+        # print(f"Received {len(poses)} poses from glove")
         hand_pos = []  
         for i in range(0,10):
-            hand_pos.append([poses[i].position.x * self.glove_to_orca_mapping_scale * 1.15, poses[i].position.y * self.glove_to_orca_mapping_scale, -poses[i].position.z * self.glove_to_orca_mapping_scale])
-        # hand_pos[2][0] = hand_pos[2][0] - 0.02  this isn't great because they won't oppose properly
-        # hand_pos[3][0] = hand_pos[3][0] - 0.02    
-        # hand_pos[6][0] = hand_pos[6][0] + 0.02
-        # hand_pos[7][0] = hand_pos[7][0] + 0.02
-        # hand_pos[2][1] = hand_pos[2][1] + 0.002
-        hand_pos[4][1] = hand_pos[4][1] + 0.002
-        hand_pos[6][1] = hand_pos[6][1] + 0.002
+            # Modify coordinate mapping
+            x = poses[i].position.x * self.glove_to_orca_mapping_scale
+            y = - poses[i].position.y * self.glove_to_orca_mapping_scale
+            z = poses[i].position.z * self.glove_to_orca_mapping_scale 
+            hand_pos.append([x, y, z])
+        # key = index in hand_pos   value = (dx, dy, dz)
+        offsets = {
+            1: (0.000, 0.000, 0.000),
+            0: (0.000, 0.000, 0.000),
+            3: (0.000, 0.000, 0.000),
+            2: (0.000, 0.000, 0.000),
+            5: (0.000, 0.000, 0.000),
+            4: (0.000, 0.000, 0.000),
+            7: (0.000, 0.000, 0.000),
+            6: (0.000, 0.000, 0.000),
+            9: (0.000, 0.000, 0.000),
+            8: (0.000, 0.000, 0.000),
+        }
+
+        for idx, (dx, dy, dz) in offsets.items():
+            hand_pos[idx][0] += dx
+            hand_pos[idx][1] += dy
+            hand_pos[idx][2] += dz
         self.compute_IK(hand_pos)
         self.update_target_vis(hand_pos)
-        
+    # ---------------------------------------------------------------------
+    # IK computation & command publishing
+    # ---------------------------------------------------------------------
     def compute_IK(self, hand_pos):
         p.stepSimulation()     
 
-        rightHandThumb_middle_pos = hand_pos[0]
-        rightHandThumb_pos = hand_pos[1]
-
-        rightHandIndex_middle_pos = hand_pos[2]
-        rightHandIndex_pos = hand_pos[3]
-        
-        rightHandMiddle_middle_pos = hand_pos[4]
-        rightHandMiddle_pos = hand_pos[5]
-        
-        rightHandRing_middle_pos = hand_pos[6]
-        rightHandRing_pos = hand_pos[7]
-        
-        rightHandPinky_middle_pos = hand_pos[8]
-        rightHandPinky_pos = hand_pos[9]
-
-        
-        orcaEndEffectorPos = [
-            rightHandThumb_middle_pos,
-            rightHandThumb_pos,
-            rightHandIndex_middle_pos,
-            rightHandIndex_pos,
-            rightHandMiddle_middle_pos,
-            rightHandMiddle_pos,
-            rightHandRing_middle_pos,
-            rightHandRing_pos,
-            rightHandPinky_middle_pos,
-            rightHandPinky_pos
+        # ------------------------------------------------------------------
+        # 1. Build the target list for the IK solver (order **must** match
+        #    `self.urdf_end_effector_index`). We use both the middle‑phalanx and
+        #    fingertip of each finger for greater stability.
+        # ------------------------------------------------------------------
+        orca_end_effector_pos = [
+            hand_pos[0], hand_pos[1],  # thumb  mid‑ & fingertip
+            hand_pos[2], hand_pos[3],  # index  mid‑ & fingertip
+            hand_pos[4], hand_pos[5],  # middle mid‑ & fingertip
+            hand_pos[6], hand_pos[7],  # ring   mid‑ & fingertip
+            hand_pos[8], hand_pos[9],  # pinky  mid‑ & fingertip
         ]
 
-        print("End effector indices:", self.orcaEndEffectorIndex)
-        for idx in self.orcaEndEffectorIndex:
-            joint_info = p.getJointInfo(self.OrcaId, idx)
-            print(f"Joint {idx}: {joint_info[1]}") 
-            
+        # ------------------------------------------------------------------
+        # 2. Solve IK with PyBullet's damped‑least‑squares (DLS) solver.
+        #    The result length equals the number of **movable** joints, i.e.
+        #    16 for the ORCA hand (thumb + 4 fingers × 3 DOF each, plus
+        #    1 abduction DOF per finger).
+        # ------------------------------------------------------------------    
         jointPoses = p.calculateInverseKinematics2(
             self.OrcaId,
-            self.orcaEndEffectorIndex,
-            orcaEndEffectorPos,
+            self.urdfEndEffectorIndex,
+            orca_end_effector_pos,
             solver=p.IK_DLS,
             maxNumIterations=50,
             residualThreshold=0.0001,
         )
-        
-        combined_jointPoses = (jointPoses[0:4] + (0.0,) + jointPoses[4:8] + (0.0,) + jointPoses[8:12] + (0.0,) + jointPoses[12:16] + (0.0,))
-        combined_jointPoses = list(combined_jointPoses)
 
-        # update the hand joints
-        for i in range(20):
+        # ------------------------------------------------------------------
+        # 3. Copy the IK solution into a full‑length joint array so we can send
+        #    POSITION_CONTROL commands to PyBullet for visual feedback.
+        # ------------------------------------------------------------------
+        active_joint_indices = [
+            i for i in range(self.numJoints)
+            if p.getJointInfo(self.OrcaId, i)[2] != p.JOINT_FIXED       # type!=FIXED
+        ]
+
+        all_joint_positions = [0.0] * self.numJoints
+        for idx_in_list, joint_idx in enumerate(active_joint_indices):
+            all_joint_positions[joint_idx] = jointPoses[idx_in_list]
+
+        finger_joints = active_joint_indices          # 对 ORCA HAND 刚好就是 16 个
+        for joint_idx in finger_joints:
             p.setJointMotorControl2(
                 bodyIndex=self.OrcaId,
-                jointIndex=i,
+                jointIndex=joint_idx,
                 controlMode=p.POSITION_CONTROL,
-                targetPosition=combined_jointPoses[i],
-                targetVelocity=0,
+                targetPosition=all_joint_positions[joint_idx],
                 force=500,
                 positionGain=0.3,
-                velocityGain=1,
+                velocityGain=1.0,
             )
 
-        joint_names = {
-            'right_wrist': 0,
-            'right_thumb_mcp': 1,
-            'right_thumb_abd': 2,
-            'right_thumb_pip': 3,
-            'right_thumb_dip': 4,
-            'right_index_abd': 5,
-            'right_index_mcp': 6,
-            'right_index_pip': 7,
-            'right_middle_abd': 8,
-            'right_middle_mcp': 9,
-            'right_middle_pip': 10,
-            'right_ring_abd': 11,
-            'right_ring_mcp': 12,
-            'right_ring_pip': 13,
-            'right_pinky_abd': 14,
-            'right_pinky_mcp': 15,
-            'right_pinky_pip': 16
+        # ------------------------------------------------------------------
+        # 4. Map the IK angles to the 17‑element vector expected by the real
+        #    ORCA hand driver: index 0 = wrist (unused here), 1‑16 = fingers.
+        # ------------------------------------------------------------------
+        real_robot_hand_q = np.zeros(17, dtype=float)
+        name_to_real = {
+            'right_thumb_mcp': 1, 'right_thumb_abd': 2, 'right_thumb_pip': 3, 'right_thumb_dip': 4,
+            'right_index_abd': 5, 'right_index_mcp': 6, 'right_index_pip': 7,
+            'right_middle_abd': 8, 'right_middle_mcp': 9, 'right_middle_pip': 10,
+            'right_ring_abd': 11, 'right_ring_mcp': 12, 'right_ring_pip': 13,
+            'right_pinky_abd': 14, 'right_pinky_mcp': 15, 'right_pinky_pip': 16,
         }
+        # Reverse lookup: joint index → joint name
+        index_to_name = {
+            i: p.getJointInfo(self.OrcaId, i)[1].decode()
+            for i in active_joint_indices
+        }
+        for idx_in_list, joint_idx in enumerate(active_joint_indices):
+            name = index_to_name[joint_idx]
+            if name in name_to_real:                       # wrist(-1) 此处未用
+                real_idx = name_to_real[name]
+                real_robot_hand_q[real_idx] = jointPoses[idx_in_list]
 
-        # map results to real robot
-        real_robot_hand_q = np.array([float(0.0) for _ in range(17)])
-
-        # Assign joint angles using joint names
-        # Thumb joints
-        real_robot_hand_q[joint_names['right_thumb_mcp']] = jointPoses[0]
-        real_robot_hand_q[joint_names['right_thumb_abd']] = jointPoses[1]
-        real_robot_hand_q[joint_names['right_thumb_pip']] = jointPoses[2]
-        real_robot_hand_q[joint_names['right_thumb_dip']] = jointPoses[3]
-
-        # Index finger joints
-        real_robot_hand_q[joint_names['right_index_abd']] = jointPoses[4]
-        real_robot_hand_q[joint_names['right_index_mcp']] = jointPoses[5]
-        real_robot_hand_q[joint_names['right_index_pip']] = jointPoses[6]
-
-        # Middle finger joints
-        real_robot_hand_q[joint_names['right_middle_abd']] = jointPoses[7]
-        real_robot_hand_q[joint_names['right_middle_mcp']] = jointPoses[8]
-        real_robot_hand_q[joint_names['right_middle_pip']] = jointPoses[9]
-
-        # Ring finger joints
-        real_robot_hand_q[joint_names['right_ring_abd']] = jointPoses[10]
-        real_robot_hand_q[joint_names['right_ring_mcp']] = jointPoses[11]
-        real_robot_hand_q[joint_names['right_ring_pip']] = jointPoses[12]
-
-        # Pinky finger joints
-        real_robot_hand_q[joint_names['right_pinky_abd']] = jointPoses[13]
-        real_robot_hand_q[joint_names['right_pinky_mcp']] = jointPoses[14]
-        real_robot_hand_q[joint_names['right_pinky_pip']] = jointPoses[15]
-
+        
         stater = JointState()
-        stater.position = [float(i) for i in real_robot_hand_q]
+        stater.position = real_robot_hand_q.tolist()
         self.pub_hand.publish(stater)
 
 def main(args=None):

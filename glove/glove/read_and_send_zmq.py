@@ -16,8 +16,8 @@ Note, currently if you are using Windows, there is a different joint ordering th
 '''
 
 IP_ADDRESS = "tcp://localhost:8000"
-LEFT_GLOVE_SN =  "45a7fc8f"
-RIGHT_GLOVE_SN = "8569617b"
+LEFT_GLOVE_SN =  "affa6a65"
+RIGHT_GLOVE_SN = "567163fb"
 
 class GloveReader(Node):
     def __init__(self):
