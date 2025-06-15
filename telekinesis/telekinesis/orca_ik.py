@@ -5,6 +5,7 @@ import rclpy
 import os
 
 from rclpy.node import Node
+from rclpy.qos import qos_profile_sensor_data 
 from geometry_msgs.msg import PoseArray
 from sensor_msgs.msg import JointState
 import sys
@@ -23,13 +24,14 @@ class OrcaPybulletIK(Node):
     def __init__(self):
         super().__init__('ORCA_Pybullet_IK')  
         # start pybullet
-        p.connect(p.GUI)
+        self.show_gui = self.declare_parameter('show_gui', True).get_parameter_value().bool_value
+        p.connect(p.GUI if self.show_gui else p.DIRECT)
         # load right orca hand      
         package_share_dir = get_package_share_directory('telekinesis')
         # print(package_share_dir)
         path_src = os.path.join(package_share_dir, 'telekinesis')
         self.is_left = self.declare_parameter('isLeft', False).get_parameter_value().bool_value
-        self.glove_to_orca_mapping_scale = 1.5
+        self.glove_to_orca_mapping_scale = 1.3
         self.urdfEndEffectorIndex = [
             8,  12,   # thumb  PIP & fingertip
             17, 19,   # index  PIP & fingertip
@@ -48,8 +50,8 @@ class OrcaPybulletIK(Node):
                 useFixedBase = True
             )
                
-            self.pub_hand = self.create_publisher(JointState, PUBLISH_TOPIC_NAME, 10)
-            self.sub_skeleton = self.create_subscription(PoseArray, "/glove/l_short", self.get_glove_data, 10)
+            self.pub_hand = self.create_publisher(JointState, PUBLISH_TOPIC_NAME, qos_profile_sensor_data)
+            self.sub_skeleton = self.create_subscription(PoseArray, "/glove/l_short", self.get_glove_data, 1)
         else:
             urdf_path = os.path.join(path_src, URDF_PATH)
             print(f"Loading URDF from: {urdf_path}")
@@ -60,8 +62,8 @@ class OrcaPybulletIK(Node):
                 useFixedBase = True
             )
             
-            self.pub_hand = self.create_publisher(JointState, PUBLISH_TOPIC_NAME, 10)
-            self.sub_skeleton = self.create_subscription(PoseArray, "/glove/r_short", self.get_glove_data, 10)
+            self.pub_hand = self.create_publisher(JointState, PUBLISH_TOPIC_NAME, qos_profile_sensor_data)
+            self.sub_skeleton = self.create_subscription(PoseArray, "/glove/r_short", self.get_glove_data, 1)
 
         self.numJoints = p.getNumJoints(self.OrcaId)
 
@@ -162,16 +164,16 @@ class OrcaPybulletIK(Node):
             hand_pos.append([x, y, z])
         # key = index in hand_pos   value = (dx, dy, dz)
         offsets = {
-            1: (0.000, 0.000, 0.000),
-            0: (0.000, 0.000, 0.000),
+            1: (0.020, 0.030, 0.000),
+            0: (0.020, 0.030, 0.000),
             3: (0.000, 0.000, 0.000),
             2: (0.000, 0.000, 0.000),
             5: (0.000, 0.000, 0.000),
             4: (0.000, 0.000, 0.000),
             7: (0.000, 0.000, 0.000),
             6: (0.000, 0.000, 0.000),
-            9: (0.000, 0.000, 0.000),
-            8: (0.000, 0.000, 0.000),
+            9: (0.000, 0.000, 0.030),
+            8: (0.000, 0.000, 0.030),
         }
 
         for idx, (dx, dy, dz) in offsets.items():
@@ -213,11 +215,11 @@ class OrcaPybulletIK(Node):
             maxNumIterations=50,
             residualThreshold=0.0001,
         )
-
         # ------------------------------------------------------------------
         # 3. Copy the IK solution into a full‑length joint array so we can send
         #    POSITION_CONTROL commands to PyBullet for visual feedback.
         # ------------------------------------------------------------------
+
         active_joint_indices = [
             i for i in range(self.numJoints)
             if p.getJointInfo(self.OrcaId, i)[2] != p.JOINT_FIXED       # type!=FIXED
@@ -243,28 +245,19 @@ class OrcaPybulletIK(Node):
         # 4. Map the IK angles to the 17‑element vector expected by the real
         #    ORCA hand driver: index 0 = wrist (unused here), 1‑16 = fingers.
         # ------------------------------------------------------------------
-        real_robot_hand_q = np.zeros(17, dtype=float)
-        name_to_real = {
-            'right_thumb_mcp': 1, 'right_thumb_abd': 2, 'right_thumb_pip': 3, 'right_thumb_dip': 4,
-            'right_index_abd': 5, 'right_index_mcp': 6, 'right_index_pip': 7,
-            'right_middle_abd': 8, 'right_middle_mcp': 9, 'right_middle_pip': 10,
-            'right_ring_abd': 11, 'right_ring_mcp': 12, 'right_ring_pip': 13,
-            'right_pinky_abd': 14, 'right_pinky_mcp': 15, 'right_pinky_pip': 16,
-        }
-        # Reverse lookup: joint index → joint name
-        index_to_name = {
-            i: p.getJointInfo(self.OrcaId, i)[1].decode()
-            for i in active_joint_indices
-        }
-        for idx_in_list, joint_idx in enumerate(active_joint_indices):
-            name = index_to_name[joint_idx]
-            if name in name_to_real:                       # wrist(-1) 此处未用
-                real_idx = name_to_real[name]
-                real_robot_hand_q[real_idx] = jointPoses[idx_in_list]
 
         
         stater = JointState()
-        stater.position = real_robot_hand_q.tolist()
+        stater.header.stamp = self.get_clock().now().to_msg()
+        stater.position = [0.0] + [float(i) for i in jointPoses]
+        stater.name = [
+            'right_wrist',  
+            'right_thumb_mcp', 'right_thumb_abd', 'right_thumb_pip', 'right_thumb_dip',
+            'right_index_abd', 'right_index_mcp', 'right_index_pip',
+            'right_middle_abd', 'right_middle_mcp', 'right_middle_pip',
+            'right_ring_abd', 'right_ring_mcp', 'right_ring_pip',
+            'right_pinky_abd', 'right_pinky_mcp', 'right_pinky_pip',
+        ]
         self.pub_hand.publish(stater)
 
 def main(args=None):

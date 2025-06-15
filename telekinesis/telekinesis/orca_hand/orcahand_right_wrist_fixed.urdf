@@ -201,7 +201,7 @@
       <child link="right_thumb_abd_jointbody"/>
       <origin xyz="6.938893903907228e-18 0.0 0.0" rpy="-1.22173 0.0 0.0"/>
       <axis xyz="0.0 0.34202085907197166 0.9396923602752502"/>
-      <limit lower="-1.08211" upper="0.0" effort="100" velocity="100"/>
+      <limit lower="-1.08211" upper="1" effort="100" velocity="100"/>
    </joint>
    <joint type="fixed" name="right_thumb_abd_offset">
       <parent link="right_thumb_abd_jointbody"/>

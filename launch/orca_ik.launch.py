@@ -17,7 +17,10 @@ def generate_launch_description():
             output='screen',
             emulate_tty=True,
             parameters=[
-            {"isLeft": False},
+            {
+                "isLeft": False,
+                "show_gui": True
+            }
             ]
         )
     ])
